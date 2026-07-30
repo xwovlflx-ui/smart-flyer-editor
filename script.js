@@ -579,10 +579,53 @@
       : [20, 85, 230];
     return `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
   }
+  function ocrSegments(data) {
+    const words = Array.isArray(data.words) ? data.words : [];
+    if (!words.length) return Array.isArray(data.lines) ? data.lines : [];
+    const accepted = words
+      .filter((line) => String(line.text || "").trim() && num(line.confidence, 100) >= 35)
+      .sort((a, b) => num(a.bbox?.y0) - num(b.bbox?.y0) || num(a.bbox?.x0) - num(b.bbox?.x0));
+    const rows = [];
+    accepted.forEach((word) => {
+      const box = word.bbox || {};
+      const y = num(box.y0), height = Math.max(12, num(box.y1) - y);
+      const center = y + height / 2;
+      const row = rows.find((item) => Math.abs(item.center - center) <= Math.max(item.height, height) * 0.58);
+      if (row) {
+        row.words.push(word);
+        row.center = (row.center * (row.words.length - 1) + center) / row.words.length;
+        row.height = Math.max(row.height, height);
+      } else rows.push({ words: [word], center, height });
+    });
+    return rows.flatMap((row) => {
+      const groups = [];
+      row.words.sort((a, b) => num(a.bbox?.x0) - num(b.bbox?.x0)).forEach((word) => {
+        const box = word.bbox || {};
+        const previous = groups[groups.length - 1];
+        const previousRight = previous ? Math.max(...previous.map((item) => num(item.bbox?.x1))) : 0;
+        const gap = num(box.x0) - previousRight;
+        const tallest = previous
+          ? Math.max(...previous.map((item) => num(item.bbox?.y1) - num(item.bbox?.y0)), num(box.y1) - num(box.y0))
+          : 0;
+        if (!previous || gap > Math.max(22, tallest * 1.35)) groups.push([word]);
+        else previous.push(word);
+      });
+      return groups.map((group) => {
+        const x0 = Math.min(...group.map((item) => num(item.bbox?.x0)));
+        const y0 = Math.min(...group.map((item) => num(item.bbox?.y0)));
+        const x1 = Math.max(...group.map((item) => num(item.bbox?.x1)));
+        const y1 = Math.max(...group.map((item) => num(item.bbox?.y1)));
+        return {
+          text: group.map((item) => String(item.text).trim()).join(" "),
+          confidence: Math.min(...group.map((item) => num(item.confidence, 100))),
+          bbox: { x0, y0, x1, y1 },
+        };
+      });
+    });
+  }
   function ocrLayers(data) {
     const sampler = makeImageSampler();
-    const lines = Array.isArray(data.lines) && data.lines.length ? data.lines : data.words || [];
-    return lines
+    return ocrSegments(data)
       .filter((line) => String(line.text || "").trim() && num(line.confidence, 100) >= 35)
       .map((line) => {
         const box = line.bbox || {};
