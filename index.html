@@ -14,7 +14,7 @@
       >
       <div class="header-title">
         <strong>전단지 편집기</strong
-        ><span>이미지를 올리고 필요한 정보만 바꿔보세요</span>
+        ><span>이미지를 올리면 문구를 자동으로 인식합니다</span>
       </div>
       <label class="upload-button" for="imageUpload"
         ><span>＋</span> 전단지 업로드</label
@@ -82,8 +82,8 @@
           </div>
         </div>
         <p id="dragTip" class="drag-tip">
-          ‘문구 교체’를 누른 후 기존 문구 영역을 드래그하면, 그 영역을 가리고 새
-          문구로 바꿀 수 있습니다.
+          이미지 업로드 후 자동 인식된 문구를 클릭해 바로 수정하세요. 인식이 어려운
+          곳만 ‘문구 교체’를 사용하면 됩니다.
         </p>
       </section>
 
@@ -95,6 +95,9 @@
           </div>
         </div>
         <div class="replace-tools">
+          <button id="scanText" class="scan-button" type="button">
+            ✦ 글자 다시 인식
+          </button>
           <button id="replaceText" class="primary-button" type="button">
             ▣ 문구 교체</button
           ><button id="replacePhone" class="phone-button" type="button">
@@ -102,8 +105,8 @@
           </button>
         </div>
         <p class="replace-help">
-          버튼을 누른 뒤 이미지의 기존 문구를 드래그해 선택하세요. 선택 영역은
-          배경색으로 지워진 뒤 새 문구가 들어갑니다.
+          인식된 문구는 색상과 크기를 가져와 텍스트로 열립니다. 글꼴은 가장 가까운
+          기본 글꼴로 적용되며, 필요하면 아래에서 바꿀 수 있습니다.
         </p>
         <div class="layer-add-wrap">
           <button id="addLayer" class="subtle-button" type="button">
@@ -119,8 +122,8 @@
           </select>
         </div>
         <div id="noLayerMessage" class="no-layer-message">
-          먼저 <b>문구 교체</b> 또는 <b>번호 교체</b>를 눌러<br />바꿀 기존 문구
-          영역을 선택하세요.
+          전단지의 <b>인식된 문구</b>를 클릭해 선택하세요.<br />누락된 곳은 문구 교체로
+          직접 영역을 선택할 수 있습니다.
         </div>
         <form id="propertyForm" class="property-form" autocomplete="off">
           <label class="field field-wide"
@@ -224,6 +227,10 @@
               삭제
             </button>
           </div>
+          <div class="edit-history-actions">
+            <button id="undoEdit" type="button" disabled>↶ 이전으로</button
+            ><button id="resetTemplate" type="button">↺ 초기화</button>
+          </div>
         </form>
         <div class="export-section">
           <span class="eyebrow">DOWNLOAD</span>
@@ -237,6 +244,7 @@
       </aside>
     </main>
     <div id="toast" class="toast" role="status"></div>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

@@ -43,6 +43,11 @@
     drag: null,
     selection: null,
     mode: null,
+    history: [],
+    historyIndex: -1,
+    restoring: false,
+    ocrJob: 0,
+    ocrActive: false,
   };
 
   const uid = () =>
@@ -54,6 +59,7 @@
     width: 1080,
     height: 1350,
     layers: [],
+    baselineLayers: [],
     updatedAt: Date.now(),
   });
   const current = () =>
@@ -79,6 +85,51 @@
         "이미지가 커서 브라우저 자동 저장 공간이 부족합니다. JSON 저장으로 백업하세요.",
       );
     }
+  }
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  function updateHistoryControls() {
+    const undo = $("undoEdit");
+    if (undo) undo.disabled = state.historyIndex <= 0 || state.ocrActive;
+    const scan = $("scanText");
+    if (scan) scan.disabled = !state.image || state.ocrActive;
+  }
+  function recordHistory() {
+    if (state.restoring) return;
+    const snapshot = {
+      templates: clone(state.templates),
+      activeId: state.activeId,
+      selectedId: state.selectedId,
+    };
+    state.history.splice(state.historyIndex + 1);
+    state.history.push(snapshot);
+    if (state.history.length > 40) state.history.shift();
+    state.historyIndex = state.history.length - 1;
+    updateHistoryControls();
+  }
+  function restoreHistory(index) {
+    const snapshot = state.history[index];
+    if (!snapshot) return;
+    state.restoring = true;
+    state.templates = clone(snapshot.templates).map(sanitizeTemplate);
+    state.activeId = snapshot.activeId;
+    state.selectedId = snapshot.selectedId;
+    state.historyIndex = index;
+    state.mode = null;
+    state.selection = null;
+    const template = current();
+    updateProperties();
+    if (template?.imageSrc) loadImage(template.imageSrc, false, false);
+    else {
+      state.image = null;
+      setupCanvas(template?.width || 1080, template?.height || 1350);
+      draw();
+      updateProperties();
+    }
+    state.restoring = false;
+    save();
+    renderTemplates();
+    updateGuide();
+    updateHistoryControls();
   }
   function formatPhone(value) {
     const digits = String(value).replace(/\D/g, "").slice(0, 11);
@@ -132,6 +183,9 @@
       layers: Array.isArray(template?.layers)
         ? template.layers.map(normalizeLayer)
         : [],
+      baselineLayers: Array.isArray(template?.baselineLayers)
+        ? template.baselineLayers.map(normalizeLayer)
+        : [],
       updatedAt: Date.now(),
     };
   }
@@ -149,6 +203,7 @@
     if (!state.templates.length) state.templates = [defaultTemplate()];
     state.activeId = state.templates[0].id;
     selectTemplate(state.activeId);
+    recordHistory();
   }
 
   function escapeHtml(value) {
@@ -190,7 +245,7 @@
     state.mode = null;
     state.selection = null;
     const template = current();
-    if (template.imageSrc) loadImage(template.imageSrc, false);
+    if (template.imageSrc) loadImage(template.imageSrc, false, false);
     else {
       state.image = null;
       setupCanvas(template.width, template.height);
@@ -200,7 +255,7 @@
     updateProperties();
     updateGuide();
   }
-  function loadImage(src, notify = true) {
+  function loadImage(src, notify = true, scanText = false) {
     const image = new Image();
     image.onload = () => {
       state.image = image;
@@ -213,10 +268,13 @@
       save();
       renderTemplates();
       updateGuide();
+      updateHistoryControls();
+      if (scanText && !state.restoring) recordHistory();
       if (notify)
         toast(
           `원본 ${image.naturalWidth} × ${image.naturalHeight}px 이미지를 불러왔습니다.`,
         );
+      if (scanText) recognizeText(template, src);
     };
     image.onerror = () => toast("이미지를 불러올 수 없습니다.");
     image.src = src;
@@ -344,8 +402,8 @@
       return;
     }
     els.tip.textContent =
-      "‘문구 교체’를 누른 후 기존 문구 영역을 드래그하면, 그 영역을 가리고 새 문구로 바꿀 수 있습니다.";
-    canvas.style.cursor = state.image ? "crosshair" : "default";
+      "인식된 문구를 클릭해 수정하세요. 누락된 문구만 ‘문구 교체’를 눌러 영역을 드래그하면 됩니다.";
+    canvas.style.cursor = state.image ? "pointer" : "default";
   }
 
   function updateProperties() {
@@ -409,6 +467,7 @@
     els.colorText.value = layer.color;
     draw();
     save();
+    recordHistory();
     renderTemplates();
     updateProperties();
   }
@@ -426,6 +485,7 @@
     template.layers.push(layer);
     state.selectedId = layer.id;
     save();
+    recordHistory();
     draw();
     renderTemplates();
     updateProperties();
@@ -460,6 +520,132 @@
       .map((value) => value.toString(16).padStart(2, "0"))
       .join("")
       .toUpperCase()}`;
+  }
+  function makeImageSampler() {
+    const sampler = document.createElement("canvas");
+    sampler.width = canvas.width;
+    sampler.height = canvas.height;
+    const context = sampler.getContext("2d", { willReadFrequently: true });
+    context.drawImage(state.image, 0, 0, sampler.width, sampler.height);
+    return context;
+  }
+  function sampledColorFrom(context, rect) {
+    const points = [
+      [rect.x - 3, rect.y - 3],
+      [rect.x + rect.w + 3, rect.y - 3],
+      [rect.x - 3, rect.y + rect.h + 3],
+      [rect.x + rect.w + 3, rect.y + rect.h + 3],
+    ];
+    const values = points.map(([x, y]) => {
+      const safeX = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+      const safeY = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+      return context.getImageData(safeX, safeY, 1, 1).data;
+    });
+    return [0, 1, 2].map((channel) =>
+      Math.round(values.reduce((sum, value) => sum + value[channel], 0) / values.length),
+    );
+  }
+  function sampledTextColor(context, rect, background) {
+    const left = Math.max(0, Math.round(rect.x));
+    const top = Math.max(0, Math.round(rect.y));
+    const width = Math.max(1, Math.min(canvas.width - left, Math.round(rect.w)));
+    const height = Math.max(1, Math.min(canvas.height - top, Math.round(rect.h)));
+    const pixels = context.getImageData(left, top, width, height).data;
+    const colors = new Map();
+    for (let index = 0; index < pixels.length; index += 16) {
+      const red = pixels[index], green = pixels[index + 1], blue = pixels[index + 2];
+      const distance = Math.hypot(red - background[0], green - background[1], blue - background[2]);
+      if (distance < 58) continue;
+      const key = [red, green, blue].map((value) => Math.round(value / 24) * 24).join(",");
+      const item = colors.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
+      item.count += 1;
+      item.red += red;
+      item.green += green;
+      item.blue += blue;
+      colors.set(key, item);
+    }
+    const best = [...colors.values()].sort((a, b) => b.count - a.count)[0];
+    const rgb = best
+      ? [best.red / best.count, best.green / best.count, best.blue / best.count]
+      : [20, 85, 230];
+    return `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+  }
+  function ocrLayers(data) {
+    const sampler = makeImageSampler();
+    const lines = Array.isArray(data.lines) && data.lines.length ? data.lines : data.words || [];
+    return lines
+      .filter((line) => String(line.text || "").trim() && num(line.confidence, 100) >= 35)
+      .map((line) => {
+        const box = line.bbox || {};
+        const x = num(box.x0), y = num(box.y0);
+        const width = Math.max(12, num(box.x1) - x);
+        const height = Math.max(12, num(box.y1) - y);
+        const padding = Math.max(3, Math.round(height * 0.12));
+        const cover = {
+          x: Math.max(0, x - padding),
+          y: Math.max(0, y - padding),
+          w: Math.min(canvas.width - Math.max(0, x - padding), width + padding * 2),
+          h: Math.min(canvas.height - Math.max(0, y - padding), height + padding * 2),
+        };
+        const background = sampledColorFrom(sampler, cover);
+        const text = String(line.text).trim();
+        return normalizeLayer({
+          type: text.replace(/\D/g, "").length >= 9 ? "전화번호" : "추가문구",
+          text,
+          replace: true,
+          coverX: cover.x,
+          coverY: cover.y,
+          coverW: cover.w,
+          coverH: cover.h,
+          coverColor: `#${background.map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()}`,
+          x: cover.x + padding,
+          y: cover.y + Math.max(0, Math.round((cover.h - height) / 2)),
+          size: Math.min(180, Math.max(14, Math.round(height * 0.92))),
+          weight: "700",
+          font: "Noto Sans KR",
+          color: sampledTextColor(sampler, { x, y, w: width, h: height }, background),
+          align: "left",
+        });
+      });
+  }
+  async function recognizeText(template = current(), source = template?.imageSrc) {
+    if (!template || !source || !state.image || state.ocrActive) return;
+    if (!window.Tesseract)
+      return toast("글자 인식 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.");
+    const job = ++state.ocrJob;
+    state.ocrActive = true;
+    updateHistoryControls();
+    els.status.textContent = "글자를 인식하고 있습니다…";
+    els.status.parentElement.classList.add("ready");
+    try {
+      const result = await window.Tesseract.recognize(source, "kor+eng", {
+        logger: (message) => {
+          if (job === state.ocrJob && message.status === "recognizing text")
+            els.status.textContent = `글자를 인식하고 있습니다… ${Math.round(message.progress * 100)}%`;
+        },
+      });
+      if (job !== state.ocrJob || template.id !== current()?.id) return;
+      const layers = ocrLayers(result.data);
+      template.layers = layers;
+      template.baselineLayers = clone(layers);
+      state.selectedId = layers[0]?.id || null;
+      save();
+      recordHistory();
+      draw();
+      renderTemplates();
+      updateProperties();
+      toast(layers.length ? `${layers.length}개 문구를 텍스트 모드로 열었습니다.` : "인식된 문구가 없습니다. 수동 문구 교체를 사용하세요.");
+    } catch (_) {
+      if (job === state.ocrJob) toast("글자 인식에 실패했습니다. 잠시 후 다시 시도하세요.");
+    } finally {
+      if (job === state.ocrJob) {
+        state.ocrActive = false;
+        setupCanvas(current().width, current().height);
+        draw();
+        updateGuide();
+        updateHistoryControls();
+      }
+    }
   }
   function finishSelection() {
     const selection = state.selection;
@@ -514,6 +700,7 @@
     }
     state.mode = null;
     save();
+    recordHistory();
     draw();
     renderTemplates();
     updateProperties();
@@ -591,6 +778,7 @@
     if (state.drag) {
       state.drag = null;
       save();
+      recordHistory();
       renderTemplates();
     }
   }
@@ -602,13 +790,19 @@
     if (!file) return;
     if (!/^image\/(png|jpeg)$/.test(file.type))
       return toast("PNG 또는 JPG 파일만 올릴 수 있습니다.");
+    const template = current();
+    template.layers = [];
+    template.baselineLayers = [];
+    state.selectedId = null;
+    state.ocrJob += 1;
     const reader = new FileReader();
-    reader.onload = () => loadImage(reader.result);
+    reader.onload = () => loadImage(reader.result, true, true);
     reader.readAsDataURL(file);
     event.target.value = "";
   });
   $("replaceText").onclick = () => setReplaceMode("추가문구");
   $("replacePhone").onclick = () => setReplaceMode("전화번호");
+  $("scanText").onclick = () => recognizeText();
   $("reselectArea").onclick = () => {
     const layer = selected();
     if (layer?.replace) setReplaceMode(layer.type, layer.id);
@@ -658,6 +852,7 @@
     current().layers.push(copy);
     state.selectedId = copy.id;
     save();
+    recordHistory();
     draw();
     renderTemplates();
     updateProperties();
@@ -668,6 +863,7 @@
     );
     state.selectedId = null;
     save();
+    recordHistory();
     draw();
     renderTemplates();
     updateProperties();
@@ -679,6 +875,7 @@
     state.activeId = template.id;
     save();
     selectTemplate(template.id);
+    recordHistory();
     toast("새 템플릿을 만들었습니다.");
   };
   $("deleteTemplate").onclick = () => {
@@ -690,6 +887,7 @@
     state.activeId = state.templates[0].id;
     save();
     selectTemplate(state.activeId);
+    recordHistory();
     toast("템플릿을 삭제했습니다.");
   };
   $("jsonExport").onclick = () =>
@@ -719,6 +917,7 @@
         state.activeId = state.templates[0].id;
         save();
         selectTemplate(state.activeId);
+        recordHistory();
         toast("템플릿을 불러왔습니다.");
       } catch (_) {
         toast("올바른 Smart Flyer JSON 파일이 아닙니다.");
@@ -727,6 +926,22 @@
     reader.readAsText(file);
     event.target.value = "";
   });
+  $("undoEdit").onclick = () => {
+    if (state.historyIndex > 0) restoreHistory(state.historyIndex - 1);
+  };
+  $("resetTemplate").onclick = () => {
+    const template = current();
+    if (!template?.imageSrc) return toast("초기화할 전단지 이미지가 없습니다.");
+    if (!confirm("현재 전단지의 편집 내용을 초기 상태로 되돌릴까요?")) return;
+    template.layers = clone(template.baselineLayers || []);
+    state.selectedId = template.layers[0]?.id || null;
+    save();
+    recordHistory();
+    draw();
+    renderTemplates();
+    updateProperties();
+    toast("초기 인식 상태로 되돌렸습니다.");
+  };
 
   function exportedCanvas() {
     const out = document.createElement("canvas");

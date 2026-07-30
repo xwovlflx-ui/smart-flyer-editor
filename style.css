@@ -342,6 +342,20 @@ button {
   gap: 7px;
   margin: 18px 0 8px;
 }
+.scan-button {
+  grid-column: 1 / -1;
+  border: 1px solid #bed0f7;
+  border-radius: 8px;
+  padding: 10px 9px;
+  background: #edf3ff;
+  color: #1957d2;
+  font-weight: 800;
+}
+.scan-button:disabled,
+.edit-history-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
 .phone-button {
   border: 0;
   border-radius: 8px;
@@ -563,6 +577,26 @@ button {
 .property-actions .delete-button {
   color: #ce5063;
   border-color: #f0c9d0;
+}
+.edit-history-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 9px;
+}
+.edit-history-actions button {
+  border: 1px solid #d5e0f1;
+  border-radius: 7px;
+  min-height: 36px;
+  background: #fff;
+  color: #405779;
+  font-size: 11px;
+  font-weight: 700;
+}
+.edit-history-actions #resetTemplate {
+  color: #9a5a17;
+  border-color: #efd9b8;
+  background: #fffaf1;
 }
 .export-section {
   margin-top: 26px;
