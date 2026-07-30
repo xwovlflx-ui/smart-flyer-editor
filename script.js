@@ -168,6 +168,8 @@
       coverH: Math.max(1, num(layer.coverH, 50)),
       coverColor: hex(layer.coverColor, "#FFFFFF"),
       align: layer.align || "left",
+      ocr: Boolean(layer.ocr),
+      edited: Boolean(layer.edited),
     };
     if (normalized.type === "전화번호")
       normalized.text = formatPhone(normalized.text);
@@ -326,7 +328,7 @@
     );
   }
   function layerBounds(layer) {
-    if (layer.replace)
+    if (layer.replace || layer.ocr)
       return {
         x: layer.coverX,
         y: layer.coverY,
@@ -339,17 +341,20 @@
   function drawLayer(layer, isSelected) {
     const metric = textMetrics(layer);
     const bounds = layerBounds(layer);
+    const previewOnly = layer.ocr && !layer.edited;
     ctx.save();
-    if (layer.replace) {
+    if (layer.replace && !previewOnly) {
       ctx.fillStyle = layer.coverColor;
       ctx.fillRect(layer.coverX, layer.coverY, layer.coverW, layer.coverH);
     }
-    ctx.font = `${layer.weight} ${layer.size}px "${layer.font}"`;
-    ctx.textBaseline = "top";
-    ctx.fillStyle = layer.color;
-    metric.lines.forEach((line, index) =>
-      ctx.fillText(line, layer.x, layer.y + index * layer.size * 1.25),
-    );
+    if (!previewOnly) {
+      ctx.font = `${layer.weight} ${layer.size}px "${layer.font}"`;
+      ctx.textBaseline = "top";
+      ctx.fillStyle = layer.color;
+      metric.lines.forEach((line, index) =>
+        ctx.fillText(line, layer.x, layer.y + index * layer.size * 1.25),
+      );
+    }
     if (isSelected) {
       ctx.strokeStyle = "#1a67ff";
       ctx.lineWidth = Math.max(2, Math.round(layer.size / 22));
@@ -422,7 +427,7 @@
     els.x.value = Math.round(layer.x);
     els.y.value = Math.round(layer.y);
     els.replaceFields.classList.toggle("visible", layer.replace);
-    if (layer.replace) {
+    if (layer.replace || layer.ocr) {
       els.coverColor.value = hex(layer.coverColor, "#FFFFFF");
       els.coverColorText.value = hex(layer.coverColor, "#FFFFFF");
       els.align.value = layer.align;
@@ -435,6 +440,10 @@
   function changeLayer() {
     const layer = selected();
     if (!layer) return;
+    if (layer.ocr && !layer.edited) {
+      layer.edited = true;
+      layer.replace = true;
+    }
     const oldX = layer.x,
       oldY = layer.y;
     layer.type = els.type.value;
@@ -592,7 +601,9 @@
         return normalizeLayer({
           type: text.replace(/\D/g, "").length >= 9 ? "전화번호" : "추가문구",
           text,
-          replace: true,
+          replace: false,
+          ocr: true,
+          edited: false,
           coverX: cover.x,
           coverY: cover.y,
           coverW: cover.w,
@@ -628,7 +639,7 @@
       const layers = ocrLayers(result.data);
       template.layers = layers;
       template.baselineLayers = clone(layers);
-      state.selectedId = layers[0]?.id || null;
+      state.selectedId = null;
       save();
       recordHistory();
       draw();
