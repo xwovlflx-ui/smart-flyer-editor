@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1957d2" />
+    <title>Smart Flyer Editor</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="./" aria-label="Smart Flyer Editor 홈"
+        ><span class="brand-mark">S</span><span>Smart <b>Flyer</b></span></a
+      >
+      <div class="header-title">
+        <strong>전단지 편집기</strong
+        ><span>이미지를 올리고 필요한 정보만 바꿔보세요</span>
+      </div>
+      <label class="upload-button" for="imageUpload"
+        ><span>＋</span> 전단지 업로드</label
+      >
+      <input
+        id="imageUpload"
+        type="file"
+        accept="image/png,image/jpeg"
+        hidden
+      />
+    </header>
+
+    <main class="editor-layout">
+      <aside class="panel template-panel" aria-label="템플릿 관리">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">WORKSPACE</span>
+            <h2>템플릿</h2>
+          </div>
+          <button id="newTemplate" class="icon-button" title="새 템플릿">
+            ＋
+          </button>
+        </div>
+        <p class="panel-help">작업 상태는 이 브라우저에 자동 저장됩니다.</p>
+        <div id="templateList" class="template-list"></div>
+        <div class="panel-divider"></div>
+        <label class="file-action" for="jsonImport"
+          >↥ <span>JSON 불러오기</span></label
+        >
+        <input
+          id="jsonImport"
+          type="file"
+          accept="application/json,.json"
+          hidden
+        />
+        <button id="jsonExport" class="file-action" type="button">
+          ⇩ <span>JSON 저장</span>
+        </button>
+        <button id="deleteTemplate" class="danger-action" type="button">
+          현재 템플릿 삭제
+        </button>
+      </aside>
+
+      <section class="canvas-area" aria-label="실시간 전단지 미리보기">
+        <div class="canvas-toolbar">
+          <div class="zoom-controls">
+            <button id="zoomOut" type="button" aria-label="축소">−</button
+            ><button id="zoomReset" type="button">
+              <span id="zoomLabel">100%</span></button
+            ><button id="zoomIn" type="button" aria-label="확대">＋</button>
+          </div>
+          <div class="canvas-status">
+            <i></i><span id="canvasStatus">이미지를 업로드해 시작하세요</span>
+          </div>
+        </div>
+        <div id="canvasViewport" class="canvas-viewport">
+          <div id="canvasStage" class="canvas-stage">
+            <canvas id="flyerCanvas" aria-label="전단지 캔버스"></canvas>
+            <div id="emptyState" class="empty-state">
+              <div class="empty-icon">▧</div>
+              <strong>전단지 이미지를 업로드하세요</strong
+              ><span>PNG 또는 JPG · 원본 해상도로 저장됩니다</span
+              ><label for="imageUpload">이미지 선택</label>
+            </div>
+          </div>
+        </div>
+        <p id="dragTip" class="drag-tip">
+          ‘문구 교체’를 누른 후 기존 문구 영역을 드래그하면, 그 영역을 가리고 새
+          문구로 바꿀 수 있습니다.
+        </p>
+      </section>
+
+      <aside class="panel properties-panel" aria-label="텍스트 속성">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">LAYER SETTINGS</span>
+            <h2>텍스트 속성</h2>
+          </div>
+        </div>
+        <div class="replace-tools">
+          <button id="replaceText" class="primary-button" type="button">
+            ▣ 문구 교체</button
+          ><button id="replacePhone" class="phone-button" type="button">
+            ☎ 번호 교체
+          </button>
+        </div>
+        <p class="replace-help">
+          버튼을 누른 뒤 이미지의 기존 문구를 드래그해 선택하세요. 선택 영역은
+          배경색으로 지워진 뒤 새 문구가 들어갑니다.
+        </p>
+        <div class="layer-add-wrap">
+          <button id="addLayer" class="subtle-button" type="button">
+            ＋ 별도 텍스트 추가</button
+          ><select id="quickLayer" aria-label="빠른 텍스트 추가">
+            <option value="">빠른 항목</option>
+            <option value="월요금">월요금</option>
+            <option value="사은품">사은품</option>
+            <option value="설치비">설치비</option>
+            <option value="할인금액">할인금액</option>
+            <option value="상품명">상품명</option>
+            <option value="추가문구">추가문구</option>
+          </select>
+        </div>
+        <div id="noLayerMessage" class="no-layer-message">
+          먼저 <b>문구 교체</b> 또는 <b>번호 교체</b>를 눌러<br />바꿀 기존 문구
+          영역을 선택하세요.
+        </div>
+        <form id="propertyForm" class="property-form" autocomplete="off">
+          <label class="field field-wide"
+            ><span>내용</span
+            ><textarea
+              id="layerText"
+              rows="2"
+              placeholder="표시할 문구를 입력하세요"
+            ></textarea>
+          </label>
+          <div class="field-row">
+            <label class="field"
+              ><span>항목</span
+              ><select id="layerType">
+                <option>추가문구</option>
+                <option>전화번호</option>
+                <option>월요금</option>
+                <option>사은품</option>
+                <option>설치비</option>
+                <option>할인금액</option>
+                <option>상품명</option>
+              </select></label
+            ><label class="field"
+              ><span>색상</span
+              ><span class="color-input"
+                ><input id="layerColor" type="color" value="#1455e6" /><input
+                  id="colorText"
+                  type="text"
+                  value="#1455E6"
+                  maxlength="7" /></span
+            ></label>
+          </div>
+          <div id="replaceFields" class="replace-fields">
+            <span class="replace-title">기존 문구 지우기 영역</span>
+            <div class="field-row">
+              <label class="field"
+                ><span>배경색</span
+                ><span class="color-input"
+                  ><input id="coverColor" type="color" value="#ffffff" /><input
+                    id="coverColorText"
+                    type="text"
+                    value="#FFFFFF"
+                    maxlength="7" /></span></label
+              ><label class="field"
+                ><span>정렬</span
+                ><select id="layerAlign">
+                  <option value="left">왼쪽</option>
+                  <option value="center">가운데</option>
+                  <option value="right">오른쪽</option>
+                </select></label
+              >
+            </div>
+            <div class="cover-coordinates">
+              <label>X <input id="coverX" type="number" min="0" /></label
+              ><label>Y <input id="coverY" type="number" min="0" /></label
+              ><label>W <input id="coverW" type="number" min="1" /></label
+              ><label>H <input id="coverH" type="number" min="1" /></label>
+            </div>
+            <button id="reselectArea" type="button" class="reselect-button">
+              영역 다시 선택
+            </button>
+          </div>
+          <label class="field field-wide"
+            ><span>글꼴</span
+            ><select id="layerFont">
+              <option value="Noto Sans KR">Noto Sans KR</option>
+              <option value="Gowun Dodum">Gowun Dodum</option>
+              <option value="Arial">Arial</option>
+              <option value="Arial Black">Arial Black</option>
+              <option value="serif">명조 (serif)</option>
+            </select></label
+          >
+          <div class="field-row">
+            <label class="field"
+              ><span>크기 <output id="fontSizeOutput">46 px</output></span
+              ><input
+                id="layerSize"
+                type="range"
+                min="12"
+                max="180"
+                value="46" /></label
+            ><label class="field"
+              ><span>굵기</span
+              ><select id="layerWeight">
+                <option value="400">보통</option>
+                <option value="500">중간</option>
+                <option value="700" selected>굵게</option>
+                <option value="800">아주 굵게</option>
+                <option value="900">최대 굵게</option>
+              </select></label
+            >
+          </div>
+          <div class="coordinates">
+            <span>좌표</span
+            ><label>X <input id="layerX" type="number" min="0" /></label
+            ><label>Y <input id="layerY" type="number" min="0" /></label>
+          </div>
+          <div class="property-actions">
+            <button id="duplicateLayer" type="button">복제</button
+            ><button id="deleteLayer" type="button" class="delete-button">
+              삭제
+            </button>
+          </div>
+        </form>
+        <div class="export-section">
+          <span class="eyebrow">DOWNLOAD</span>
+          <h3>완성 파일 저장</h3>
+          <div class="export-grid">
+            <button data-export="png" type="button">PNG</button
+            ><button data-export="jpg" type="button">JPG</button
+            ><button data-export="pdf" type="button">PDF</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+    <script src="script.js"></script>
+  </body>
+</html>
