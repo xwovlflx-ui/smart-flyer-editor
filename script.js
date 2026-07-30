@@ -161,7 +161,7 @@
       size: Math.max(12, num(layer.size, 46)),
       weight: String(layer.weight || "700"),
       color: hex(layer.color),
-      replace: Boolean(layer.replace),
+      replace: layer.ocr ? false : Boolean(layer.replace),
       coverX: num(layer.coverX),
       coverY: num(layer.coverY),
       coverW: Math.max(1, num(layer.coverW, 100)),
@@ -407,7 +407,7 @@
       return;
     }
     els.tip.textContent =
-      "인식된 문구를 클릭해 수정하세요. 방향키로 1px, Shift+방향키로 10px씩 위치를 옮길 수 있습니다.";
+      "인식된 문구는 배경을 가리지 않고 수정됩니다. 방향키로 1px, Shift+방향키로 10px씩 위치를 옮길 수 있습니다.";
     canvas.style.cursor = state.image ? "pointer" : "default";
   }
 
@@ -442,7 +442,7 @@
     if (!layer) return;
     if (layer.ocr && !layer.edited) {
       layer.edited = true;
-      layer.replace = true;
+      layer.replace = false;
     }
     layer.type = els.type.value;
     layer.text =
@@ -847,7 +847,7 @@
     event.preventDefault();
     if (layer.ocr && !layer.edited) {
       layer.edited = true;
-      layer.replace = true;
+      layer.replace = false;
     }
     const step = event.shiftKey ? 10 : 1;
     layer.x = Math.max(0, layer.x + direction[0] * step);
