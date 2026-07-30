@@ -407,7 +407,7 @@
       return;
     }
     els.tip.textContent =
-      "인식된 문구를 클릭해 수정하세요. 누락된 문구만 ‘문구 교체’를 눌러 영역을 드래그하면 됩니다.";
+      "인식된 문구를 클릭해 수정하세요. 방향키로 1px, Shift+방향키로 10px씩 위치를 옮길 수 있습니다.";
     canvas.style.cursor = state.image ? "pointer" : "default";
   }
 
@@ -437,15 +437,13 @@
       els.coverH.value = Math.round(layer.coverH);
     }
   }
-  function changeLayer() {
+  function changeLayer(event) {
     const layer = selected();
     if (!layer) return;
     if (layer.ocr && !layer.edited) {
       layer.edited = true;
       layer.replace = true;
     }
-    const oldX = layer.x,
-      oldY = layer.y;
     layer.type = els.type.value;
     layer.text =
       layer.type === "전화번호" ? formatPhone(els.text.value) : els.text.value;
@@ -464,9 +462,11 @@
       layer.coverH = Math.max(1, num(els.coverH.value, layer.coverH));
       layer.coverColor = hex(els.coverColor.value, "#FFFFFF");
       layer.align = els.align.value;
-      layer.coverX += nextX - oldX;
-      layer.coverY += nextY - oldY;
-      alignText(layer);
+      const coordinateChange = event?.target === els.x || event?.target === els.y;
+      if (coordinateChange) {
+        layer.x = nextX;
+        layer.y = nextY;
+      } else alignText(layer);
     } else {
       layer.x = nextX;
       layer.y = nextY;
@@ -820,10 +820,6 @@
       dy = Math.round(point.y - state.drag.start.y);
     layer.x = Math.max(0, state.drag.x + dx);
     layer.y = Math.max(0, state.drag.y + dy);
-    if (layer.replace) {
-      layer.coverX = Math.max(0, state.drag.coverX + dx);
-      layer.coverY = Math.max(0, state.drag.coverY + dy);
-    }
     draw();
     updateProperties();
   });
@@ -838,6 +834,30 @@
   }
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
+  window.addEventListener("keydown", (event) => {
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    const direction = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    }[event.key];
+    const layer = selected();
+    if (!direction || !layer || state.mode || state.ocrActive) return;
+    event.preventDefault();
+    if (layer.ocr && !layer.edited) {
+      layer.edited = true;
+      layer.replace = true;
+    }
+    const step = event.shiftKey ? 10 : 1;
+    layer.x = Math.max(0, layer.x + direction[0] * step);
+    layer.y = Math.max(0, layer.y + direction[1] * step);
+    current().updatedAt = Date.now();
+    draw();
+    save();
+    recordHistory();
+    updateProperties();
+  });
 
   $("imageUpload").addEventListener("change", (event) => {
     const file = event.target.files[0];
