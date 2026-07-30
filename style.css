@@ -566,6 +566,25 @@ button {
   grid-template-columns: 1fr 1fr;
   gap: 7px;
 }
+.ai-clean-button {
+  width: 100%;
+  margin: 2px 0 0;
+  border: 1px solid #a8c0ff;
+  border-radius: 7px;
+  min-height: 38px;
+  background: #eef3ff;
+  color: #1749bf;
+  font-weight: 800;
+}
+.ai-clean-button:hover:not(:disabled) {
+  background: #dfe9ff;
+}
+.ai-clean-hint {
+  margin: -2px 0 4px;
+  color: #7081a6;
+  font-size: 12px;
+  line-height: 1.55;
+}
 .property-actions button {
   border: 1px solid var(--line);
   border-radius: 7px;

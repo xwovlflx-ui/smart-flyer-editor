@@ -31,6 +31,8 @@
     coverW: $("coverW"),
     coverH: $("coverH"),
     align: $("layerAlign"),
+    aiClean: $("aiCleanText"),
+    aiHint: $("aiCleanHint"),
     toast: $("toast"),
   };
   const STORE_KEY = "smart-flyer-editor-templates-v2";
@@ -48,6 +50,7 @@
     restoring: false,
     ocrJob: 0,
     ocrActive: false,
+    aiBusy: false,
   };
 
   const uid = () =>
@@ -91,7 +94,8 @@
     const undo = $("undoEdit");
     if (undo) undo.disabled = state.historyIndex <= 0 || state.ocrActive;
     const scan = $("scanText");
-    if (scan) scan.disabled = !state.image || state.ocrActive;
+    if (scan) scan.disabled = !state.image || state.ocrActive || state.aiBusy;
+    if (els.aiClean) els.aiClean.disabled = state.aiBusy;
   }
   function recordHistory() {
     if (state.restoring) return;
@@ -170,6 +174,7 @@
       align: layer.align || "left",
       ocr: Boolean(layer.ocr),
       edited: Boolean(layer.edited),
+      aiCleaned: Boolean(layer.aiCleaned),
     };
     if (normalized.type === "전화번호")
       normalized.text = formatPhone(normalized.text);
@@ -257,14 +262,16 @@
     updateProperties();
     updateGuide();
   }
-  function loadImage(src, notify = true, scanText = false) {
+  function loadImage(src, notify = true, scanText = false, preserveSize = false) {
     const image = new Image();
     image.onload = () => {
       state.image = image;
       const template = current();
       template.imageSrc = src;
-      template.width = image.naturalWidth;
-      template.height = image.naturalHeight;
+      if (!preserveSize) {
+        template.width = image.naturalWidth;
+        template.height = image.naturalHeight;
+      }
       setupCanvas(template.width, template.height);
       draw();
       save();
@@ -415,6 +422,8 @@
     const layer = selected();
     els.form.classList.toggle("visible", Boolean(layer));
     els.noLayer.hidden = Boolean(layer);
+    els.aiClean.hidden = !layer || !layer.ocr || layer.aiCleaned;
+    els.aiHint.hidden = !layer || !layer.ocr || layer.aiCleaned;
     if (!layer) return;
     els.text.value = layer.text;
     els.type.value = layer.type;
@@ -479,6 +488,89 @@
     recordHistory();
     renderTemplates();
     updateProperties();
+  }
+  function baseImageData() {
+    const base = document.createElement("canvas");
+    base.width = canvas.width;
+    base.height = canvas.height;
+    base.getContext("2d").drawImage(state.image, 0, 0, base.width, base.height);
+    return base.toDataURL("image/png");
+  }
+  function fitImageData(src, width, height) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const fitted = document.createElement("canvas");
+        fitted.width = width;
+        fitted.height = height;
+        fitted.getContext("2d").drawImage(image, 0, 0, width, height);
+        resolve(fitted.toDataURL("image/png"));
+      };
+      image.onerror = () => reject(new Error("AI 결과 이미지를 열 수 없습니다."));
+      image.src = src;
+    });
+  }
+  async function cleanOriginalTextWithAI() {
+    const layer = selected();
+    const template = current();
+    if (!layer?.ocr || !template || !state.image) return;
+    if (layer.aiCleaned) return toast("이 글자 영역은 이미 AI로 정리되었습니다.");
+
+    let passcode = sessionStorage.getItem("smart-flyer-edit-passcode");
+    if (!passcode) {
+      passcode = prompt("Vercel에 설정한 AI 편집 비밀번호를 입력하세요.");
+      if (!passcode) return;
+      sessionStorage.setItem("smart-flyer-edit-passcode", passcode);
+    }
+
+    const bounds = layerBounds(layer);
+    state.aiBusy = true;
+    updateHistoryControls();
+    els.aiClean.textContent = "AI가 배경을 복원하는 중…";
+    try {
+      const response = await fetch("/api/edit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-flyer-edit-code": passcode,
+        },
+        body: JSON.stringify({
+          imageData: baseImageData(),
+          width: template.width,
+          height: template.height,
+          selection: bounds,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.imageData)
+        throw new Error(result.message || "AI 배경 복원에 실패했습니다.");
+
+      const imageSrc = await fitImageData(
+        result.imageData,
+        template.width,
+        template.height,
+      );
+      template.imageSrc = imageSrc;
+      layer.aiCleaned = true;
+      layer.edited = true;
+      layer.replace = false;
+      template.baselineLayers = clone(template.layers);
+      template.updatedAt = Date.now();
+      loadImage(imageSrc, false, false, true);
+      save();
+      recordHistory();
+      renderTemplates();
+      updateProperties();
+      toast("기존 글자를 지우고 배경을 복원했습니다. 새 문구가 원본 위에 정확히 적용됩니다.");
+    } catch (error) {
+      if (String(error.message || "").includes("비밀번호"))
+        sessionStorage.removeItem("smart-flyer-edit-passcode");
+      toast(error.message || "AI 배경 복원에 실패했습니다.");
+    } finally {
+      state.aiBusy = false;
+      els.aiClean.textContent = "✦ AI로 기존 글자 지우고 적용";
+      updateHistoryControls();
+    }
   }
   function addLayer(type = "추가문구") {
     if (!state.image) return toast("먼저 전단지 이미지를 업로드하세요.");
@@ -877,6 +969,7 @@
   $("replaceText").onclick = () => setReplaceMode("추가문구");
   $("replacePhone").onclick = () => setReplaceMode("전화번호");
   $("scanText").onclick = () => recognizeText();
+  els.aiClean.onclick = cleanOriginalTextWithAI;
   $("reselectArea").onclick = () => {
     const layer = selected();
     if (layer?.replace) setReplaceMode(layer.type, layer.id);
